@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1e1b24;
+  background: #fffdfd;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; }
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+input, select, textarea { max-width: 100%; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgba(236, 72, 153, .22); outline-offset: 2px;
+}
+
+/* Prevent long labels and currency values from breaking the mobile layout. */
+.app-shell { width: 100%; overflow-x: clip; }
+.app-shell main { min-width: 0; }
+.app-shell main > div, .app-shell main section { min-width: 0; }
+.app-shell table { min-width: 760px; }
+.app-shell th, .app-shell td { vertical-align: middle; }
+.app-shell input, .app-shell select { min-height: 42px; }
+.app-tabs { scrollbar-width: none; }
+.app-tabs::-webkit-scrollbar { display: none; }
+.modal-panel { max-height: min(90dvh, 860px); overflow-y: auto; overscroll-behavior: contain; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bounceOnce { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-5px); } }
+.animate-fadeIn { animation: fadeIn .18s ease-out; }
+.animate-bounce-once { animation: bounceOnce .35s ease-out; }
+
+@media (max-width: 1023px) {
+  .app-shell main { padding-top: 1.25rem; padding-bottom: 1.5rem; }
+  .app-shell .grid.grid-cols-1.sm\:grid-cols-2.lg\:grid-cols-4 { gap: .75rem; }
+}
+
+@media (max-width: 767px) {
+  .app-header-row { align-items: flex-start; }
+  .app-header-row > div:first-child { width: 100%; }
+  .header-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .header-actions > button:last-child { grid-column: 1 / -1; justify-content: center; min-height: 44px; }
+  .header-actions > div { min-width: 0; justify-content: space-around; }
+  .app-tabs { margin-left: -1rem; margin-right: -1rem; padding-left: 1rem; padding-right: 1rem; }
+  .app-tabs button { min-height: 48px; padding-left: .8rem; padding-right: .8rem; }
+  .app-shell main { padding-left: .875rem; padding-right: .875rem; }
+  .app-shell footer > div { text-align: center; }
+  .mobile-metrics { grid-template-columns: 1fr; }
+  .mobile-metrics > div { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+  .mobile-metrics > div span:last-child { text-align: right; overflow-wrap: anywhere; }
+  .modal-panel { max-height: 92dvh; border-radius: 1.1rem; }
+  .modal-panel > div:last-child { padding: 1rem; }
+  .app-shell .fixed.inset-0 { align-items: flex-end; padding: .5rem; }
+  .app-shell .fixed.bottom-5.right-5 { left: .75rem; right: .75rem; bottom: .75rem; max-width: none; }
+  .app-shell .fixed.bottom-5.right-5 > div { width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .app-shell h1 { font-size: 1rem; }
+  .app-shell .text-xl, .app-shell .text-2xl { overflow-wrap: anywhere; }
+  .app-shell .rounded-2xl { border-radius: 1rem; }
+  .app-shell .p-6 { padding: 1rem; }
+  .app-shell .p-5 { padding: .9rem; }
+  .app-shell .header-actions { gap: .5rem; }
+  .app-shell .header-actions > div { grid-column: 1 / -1; }
+}
