@@ -27,6 +27,8 @@ import {
   Sparkles,
   ShieldCheck,
   FolderOpen,
+  ArrowUp,
+  ArrowDown,
   ArrowUpRight,
   Clock
 } from 'lucide-react';
@@ -208,6 +210,22 @@ export default function App() {
       return matchesSearch && matchesStatus && matchesCategory;
     });
   }, [computedItems, itemSearch, itemStatusFilter, itemCategoryFilter]);
+
+  const moveItem = (itemId, direction) => {
+    const currentIndex = filteredItems.findIndex((item) => item.id === itemId);
+    const targetItem = filteredItems[currentIndex + direction];
+    if (!targetItem) return;
+
+    setAppState((prev) => {
+      const sourceIndex = prev.items.findIndex((item) => item.id === itemId);
+      const targetIndex = prev.items.findIndex((item) => item.id === targetItem.id);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+
+      const items = [...prev.items];
+      [items[sourceIndex], items[targetIndex]] = [items[targetIndex], items[sourceIndex]];
+      return { ...prev, items };
+    });
+  };
 
   const [historySearch, setHistorySearch] = useState('');
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState('Semua');
@@ -478,13 +496,17 @@ export default function App() {
       open: true,
       title: 'Reset Data ke Awal?',
       message:
-        'Seluruh perubahan dan histori pembayaran tambahan akan dihapus, dan data akan dikembalikan ke 27 pos default awal Excel. Tindakan ini tidak dapat dibatalkan.',
+        'Seluruh perubahan dan histori pembayaran akan dihapus, nilai terbayar menjadi 0, dan data akan dikembalikan ke 27 pos default awal Excel. Tindakan ini tidak dapat dibatalkan.',
       confirmLabel: 'Reset Sekarang',
       variant: 'danger',
       onConfirm: () => {
         const fresh = buildDefaultState();
-        setAppState(fresh);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+        const resetState = {
+          ...fresh,
+          items: fresh.items.map((item) => ({ ...item, payments: [] }))
+        };
+        setAppState(resetState);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(resetState));
         closeConfirmDialog();
         showToast('Data berhasil di-reset ke pengaturan awal.');
       }
@@ -1190,7 +1212,7 @@ export default function App() {
                     Daftar Pos Tagihan & Alokasi
                   </h2>
                   <p className="text-xs text-[#2A2438]/65">
-                    Kelola target anggaran, lakukan pembayaran cepat, atau perbarui status pos
+                    Kelola target anggaran, atur urutan dengan tombol panah, atau perbarui status pos
                   </p>
                 </div>
 
@@ -1280,7 +1302,7 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-pink-100/70 text-sm">
-                        {filteredItems.map((item) => (
+                        {filteredItems.map((item, index) => (
                           <tr
                             key={item.id}
                             className="hover:bg-[#FDF2F8]/40 transition-colors group"
@@ -1339,6 +1361,24 @@ export default function App() {
 
                             <td className="py-3.5 px-4 text-right whitespace-nowrap">
                               <div className="inline-flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => moveItem(item.id, -1)}
+                                  disabled={index === 0}
+                                  className="p-1.5 rounded-lg text-[#2A2438]/60 hover:text-[#EC4899] hover:bg-pink-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                  title="Naikkan urutan pos"
+                                  aria-label={`Naikkan urutan ${item.name}`}
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => moveItem(item.id, 1)}
+                                  disabled={index === filteredItems.length - 1}
+                                  className="p-1.5 rounded-lg text-[#2A2438]/60 hover:text-[#EC4899] hover:bg-pink-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                  title="Turunkan urutan pos"
+                                  aria-label={`Turunkan urutan ${item.name}`}
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
                                 <button
                                   onClick={() => openAddPaymentModal(item.id)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FDF2F8] text-[#EC4899] hover:bg-[#EC4899] hover:text-white border border-pink-200 transition-colors cursor-pointer"
@@ -1399,7 +1439,7 @@ export default function App() {
 
                 {/* Mobile & Tablet Card Grid View */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:hidden">
-                  {filteredItems.map((item) => (
+                  {filteredItems.map((item, index) => (
                     <div
                       key={item.id}
                       className="bg-white rounded-2xl p-4 border border-pink-100 shadow-xs flex flex-col justify-between gap-3"
@@ -1414,7 +1454,29 @@ export default function App() {
                               {item.name}
                             </h3>
                           </div>
-                          <StatusBadge status={item.metrics.status} />
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusBadge status={item.metrics.status} />
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => moveItem(item.id, -1)}
+                                disabled={index === 0}
+                                className="h-11 w-11 flex items-center justify-center rounded-lg text-[#2A2438]/65 hover:text-[#EC4899] hover:bg-pink-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                title="Naikkan urutan pos"
+                                aria-label={`Naikkan urutan ${item.name}`}
+                              >
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(item.id, 1)}
+                                disabled={index === filteredItems.length - 1}
+                                className="h-11 w-11 flex items-center justify-center rounded-lg text-[#2A2438]/65 hover:text-[#EC4899] hover:bg-pink-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                title="Turunkan urutan pos"
+                                aria-label={`Turunkan urutan ${item.name}`}
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
 
                         {item.notes && (
