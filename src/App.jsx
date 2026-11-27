@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import {
   Wallet, CheckCircle2, Clock, Plus, Pencil, Trash2, Download, Upload,
   RotateCcw, Search, Calendar, CreditCard, Sparkles, X, Check, AlertCircle,
-  FileSpreadsheet, ChevronDown, ChevronUp, Receipt, Cloud, CloudOff, Share2, RefreshCw
+  FileSpreadsheet, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Receipt, Cloud, CloudOff, Share2, RefreshCw
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -90,6 +90,7 @@ export default function App() {
   const [roomId, setRoomId] = useState(getInitialRoomId);
   const [syncStatus, setSyncStatus] = useState(isSupabaseConfigured ? 'connecting' : 'local-only');
   const skipNextCloudPush = useRef(false);
+  const cloudFetchVersion = useRef(0);
 
   const [appData, setAppData] = useState(() => {
     try {
@@ -139,12 +140,15 @@ export default function App() {
         return;
       }
 
+      const requestVersion = ++cloudFetchVersion.current;
       setSyncStatus('connecting');
       const { data, error } = await supabase
         .from('household_allocations')
         .select('data')
         .eq('id', roomId)
         .maybeSingle();
+
+      if (requestVersion !== cloudFetchVersion.current) return;
 
       if (error) {
         console.error('Supabase fetch error:', error);
@@ -163,6 +167,7 @@ export default function App() {
         const { error: upsertErr } = await supabase
           .from('household_allocations')
           .upsert({ id: roomId, data: appData, updated_at: new Date().toISOString() });
+        if (requestVersion !== cloudFetchVersion.current) return;
         if (upsertErr) {
           console.error('Supabase initial upsert error:', upsertErr);
           setSyncStatus('error');
@@ -280,6 +285,25 @@ export default function App() {
       return matchSearch && matchStatus;
     });
   }, [enrichedItems, searchQuery, statusFilter]);
+
+  const moveAllocation = (itemId, direction) => {
+    const currentIndex = filteredItems.findIndex((item) => item.id === itemId);
+    const targetItem = filteredItems[currentIndex + direction];
+    if (!targetItem) return;
+
+    setAppData((prev) => {
+      const sourceIndex = prev.allocations.findIndex((item) => item.id === itemId);
+      const targetIndex = prev.allocations.findIndex((item) => item.id === targetItem.id);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+
+      const allocations = [...prev.allocations];
+      [allocations[sourceIndex], allocations[targetIndex]] = [
+        allocations[targetIndex],
+        allocations[sourceIndex],
+      ];
+      return { ...prev, allocations };
+    });
+  };
 
   // Share Link Room
   const handleCopyShareLink = async () => {
@@ -480,36 +504,55 @@ export default function App() {
     setConfirmModal({
       open: true,
       title: 'Reset Seluruh Data?',
-      message: 'Semua perubahan pada ruang ini akan dikembalikan ke data awal.',
+      message: 'Semua perubahan dan riwayat pembayaran akan dihapus. Daftar pos dikembalikan ke data awal dengan nilai terbayar Rp 0.',
       onConfirm: async () => {
         const freshData = createFreshInitialData();
-        localStorage.removeItem(STORAGE_KEY);
+        freshData.allocations = freshData.allocations.map((item) => ({
+          ...item,
+          payments: [],
+        }));
+        cloudFetchVersion.current += 1;
         setExpandedRow(null);
         setSearchQuery('');
         setStatusFilter('ALL');
-        setConfirmModal({ open: false });
+        setConfirmModal({ open: false, title: '', message: '', onConfirm: null });
 
-        // Hindari double push dari useEffect karena langsung kita simpan eksplisit ke cloud
         skipNextCloudPush.current = true;
         setAppData(freshData);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(freshData));
+        let localSaveFailed = false;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(freshData));
+        } catch (error) {
+          console.error('LocalStorage reset failed:', error);
+          localSaveFailed = true;
+        }
 
         if (isSupabaseConfigured && supabase) {
           setSyncStatus('syncing');
-          const { error } = await supabase
-            .from('household_allocations')
-            .upsert({ id: roomId, data: freshData, updated_at: new Date().toISOString() });
+          try {
+            const { error } = await supabase
+              .from('household_allocations')
+              .upsert({ id: roomId, data: freshData, updated_at: new Date().toISOString() });
 
-          if (error) {
+            if (error) throw error;
+            setSyncStatus('synced');
+          } catch (error) {
             console.error('Supabase reset error:', error);
             setSyncStatus('error');
-            showToast(`Reset lokal berhasil, tapi gagal ke cloud: ${error.message}`, 'error');
+            showToast(
+              `Reset lokal berhasil, tetapi gagal menyimpan ke cloud: ${error.message || 'kesalahan jaringan'}`,
+              'error'
+            );
             return;
           }
-          setSyncStatus('synced');
         }
 
-        showToast('Data berhasil dikembalikan ke pengaturan awal');
+        showToast(
+          localSaveFailed
+            ? 'Reset berhasil di layar, tetapi gagal disimpan di browser.'
+            : 'Data berhasil dikembalikan ke pengaturan awal dengan nilai terbayar Rp 0.',
+          localSaveFailed ? 'error' : 'success'
+        );
       },
     });
   };
@@ -550,7 +593,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FFF8FA] text-[#1E1B24] font-sans pb-16">
+    <div className="app-shell min-h-screen bg-[#FFF8FA] text-[#1E1B24] font-sans pb-16">
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg bg-[#1E1B24] text-white text-sm border border-pink-500/30">
           {toast.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-400" /> : <Check className="w-4 h-4 text-pink-400" />}
@@ -560,8 +603,8 @@ export default function App() {
 
       {/* Header */}
       <header className="sticky top-0 z-30 bg-[#1E1B24] text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-0 sm:min-h-16 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-400 to-rose-600 flex items-center justify-center shadow-inner">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
@@ -574,13 +617,13 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="w-full sm:w-auto flex flex-wrap items-center justify-start sm:justify-end gap-1.5 sm:gap-2">
             {isSupabaseConfigured && (
               <button
                 type="button"
                 onClick={() => fetchFromSupabase(true)}
                 title="Muat Ulang Data Terbaru dari Cloud"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+                className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-pink-300 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`} />
                 <span className="hidden lg:inline">Refresh</span>
@@ -590,7 +633,7 @@ export default function App() {
               type="button"
               onClick={handleCopyShareLink}
               title="Salin Link Ruang"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <Share2 className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Bagikan</span>
@@ -602,14 +645,14 @@ export default function App() {
                 setRoomModalOpen(true);
               }}
               title="Ganti Kode Ruang"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <span>Ruang</span>
             </button>
             <button
               type="button"
               onClick={handleExportExcel}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Excel</span>
@@ -617,7 +660,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleExportJSON}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <Download className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Backup</span>
@@ -625,7 +668,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <Upload className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Restore</span>
@@ -634,7 +677,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setPayModal({ open: true, itemId: enrichedItems.find((i) => i.remaining > 0)?.id || enrichedItems[0]?.id || '', editPayment: null })}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-sm transition"
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
               <span>Catat Bayar</span>
@@ -646,8 +689,8 @@ export default function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
         {/* Navigation Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex p-1 rounded-xl bg-pink-100/70 border border-pink-200/60">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+          <div className="w-full sm:w-auto flex items-center overflow-x-auto p-1 rounded-xl bg-pink-100/70 border border-pink-200/60">
             {[
               { id: 'dashboard', label: 'Dashboard' },
               { id: 'allocations', label: `Pos Tagihan (${enrichedItems.length})` },
@@ -657,7 +700,7 @@ export default function App() {
                 type="button"
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                className={`shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${
                   activeTab === tab.id
                     ? 'bg-[#1E1B24] text-white shadow-sm'
                     : 'text-[#1E1B24]/70 hover:text-[#1E1B24]'
@@ -671,7 +714,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleResetData}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+            className="inline-flex min-h-10 self-end sm:self-auto items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Reset Data Awal
@@ -867,8 +910,8 @@ export default function App() {
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full min-w-[1000px] text-left border-collapse">
                 <thead>
                   <tr className="bg-[#FFF8FA] border-b border-pink-100 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                     <th className="py-3.5 px-4">Kategori & Nama Pos</th>
@@ -881,7 +924,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-pink-50 text-xs sm:text-sm">
-                  {filteredItems.map((item) => (
+                  {filteredItems.map((item, index) => (
                     <React.Fragment key={item.id}>
                       <tr className="hover:bg-pink-50/40 transition">
                         <td className="py-3.5 px-4">
@@ -907,6 +950,26 @@ export default function App() {
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => moveAllocation(item.id, -1)}
+                              disabled={index === 0}
+                              title="Naikkan urutan pos"
+                              aria-label={`Naikkan urutan ${item.name}`}
+                              className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-pink-600 hover:bg-pink-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            >
+                              <ArrowUp className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveAllocation(item.id, 1)}
+                              disabled={index === filteredItems.length - 1}
+                              title="Turunkan urutan pos"
+                              aria-label={`Turunkan urutan ${item.name}`}
+                              className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-pink-600 hover:bg-pink-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                            >
+                              <ArrowDown className="w-4 h-4" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => setPayModal({ open: true, itemId: item.id, editPayment: null })}
@@ -984,6 +1047,163 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="lg:hidden p-3 sm:p-4 space-y-3">
+              {filteredItems.map((item, index) => (
+                <article
+                  key={item.id}
+                  className="rounded-2xl border border-pink-100 bg-[#FFFDFD] p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-pink-600">
+                        {item.category}
+                      </span>
+                      <h3 className="mt-0.5 break-words text-sm font-bold text-[#1E1B24]">
+                        {item.name}
+                      </h3>
+                    </div>
+                    <StatusBadge status={item.status} />
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-xl bg-white p-2.5">
+                      <span className="block text-slate-500">Target</span>
+                      <span className="font-semibold text-[#1E1B24]">{formatIDR(item.target)}</span>
+                    </div>
+                    <div className="rounded-xl bg-white p-2.5">
+                      <span className="block text-slate-500">Terbayar</span>
+                      <span className="font-semibold text-emerald-600">{formatIDR(item.paid)}</span>
+                    </div>
+                    <div className="rounded-xl bg-white p-2.5">
+                      <span className="block text-slate-500">Sisa tagihan</span>
+                      <span className="font-semibold text-rose-600">{formatIDR(item.remaining)}</span>
+                    </div>
+                    <div className="rounded-xl bg-white p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">Progres</span>
+                        <span className="font-semibold text-slate-700">{item.pct}%</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-pink-100">
+                        <div
+                          className={`h-full rounded-full ${item.pct >= 100 ? 'bg-emerald-500' : 'bg-pink-500'}`}
+                          style={{ width: `${item.pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-pink-100 pt-3">
+                    <div className="flex items-center gap-1">
+                      <span className="mr-1 text-[11px] font-medium text-slate-500">Urutan</span>
+                      <button
+                        type="button"
+                        onClick={() => moveAllocation(item.id, -1)}
+                        disabled={index === 0}
+                        title="Naikkan urutan pos"
+                        aria-label={`Naikkan urutan ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border border-pink-100 bg-white text-slate-600 hover:bg-pink-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveAllocation(item.id, 1)}
+                        disabled={index === filteredItems.length - 1}
+                        title="Turunkan urutan pos"
+                        aria-label={`Turunkan urutan ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border border-pink-100 bg-white text-slate-600 hover:bg-pink-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPayModal({ open: true, itemId: item.id, editPayment: null })}
+                        title="Tambah Pembayaran"
+                        aria-label={`Tambah pembayaran ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl bg-pink-100 text-pink-700 hover:bg-pink-200"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}
+                        title="Lihat Riwayat Pos"
+                        aria-label={`Riwayat ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-pink-100"
+                      >
+                        {expandedRow === item.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setItemModal({ open: true, editItem: item })}
+                        title="Edit Pos"
+                        aria-label={`Edit ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item.id, item.name)}
+                        title="Hapus Pos"
+                        aria-label={`Hapus ${item.name}`}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {expandedRow === item.id && (
+                    <div className="mt-3 border-t border-pink-100 pt-3">
+                      <p className="mb-2 text-xs font-bold text-[#1E1B24]">
+                        Riwayat Pembayaran ({item.payments.length})
+                      </p>
+                      {item.payments.length === 0 ? (
+                        <p className="text-xs text-slate-400">Belum ada transaksi pembayaran pada pos ini.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {item.payments.map((payment) => (
+                            <div
+                              key={payment.id}
+                              className="flex items-center justify-between gap-2 rounded-xl border border-pink-100 bg-white p-2.5 text-xs"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-medium text-slate-500">{formatDateID(payment.date)}</p>
+                                <p className="font-bold text-emerald-600">{formatIDR(payment.amount)}</p>
+                                {payment.note && <p className="break-words text-slate-400">{payment.note}</p>}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPayModal({ open: true, itemId: item.id, editPayment: payment })}
+                                  aria-label="Edit pembayaran"
+                                  className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePayment(item.id, payment.id)}
+                                  aria-label="Hapus pembayaran"
+                                  className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
             </div>
           </section>
         )}
