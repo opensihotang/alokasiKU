@@ -14,3 +14,7 @@
 {"level":"info","message":"Initializing Dynatrace Managed MCP Server v0.5.3...","timestamp":"2026-11-26T08:57:30.007Z"}
 {"error":{},"level":"error","message":"Fatal error in main(): DT_ENVIRONMENT_CONFIGS is required","timestamp":"2026-11-26T08:57:30.008Z"}
 {"level":"info","message":"Connecting Dynatrace Telemetry via https://bf96767wvv.bf.dynatrace.com/mbeacon. You can disable this by setting DT_MCP_DISABLE_TELEMETRY=true.","timestamp":"2026-11-26T08:57:30.013Z"}
+{"level":"info","message":"Starting Dynatrace Managed MCP","timestamp":"2026-11-27T03:10:55.784Z"}
+{"level":"info","message":"Initializing Dynatrace Managed MCP Server v0.5.3...","timestamp":"2026-11-27T03:10:55.794Z"}
+{"error":{},"level":"error","message":"Fatal error in main(): DT_ENVIRONMENT_CONFIGS is required","timestamp":"2026-11-27T03:10:55.798Z"}
+{"level":"info","message":"Connecting Dynatrace Telemetry via https://bf96767wvv.bf.dynatrace.com/mbeacon. You can disable this by setting DT_MCP_DISABLE_TELEMETRY=true.","timestamp":"2026-11-27T03:10:55.826Z"}

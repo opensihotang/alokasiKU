@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
-const STORAGE_KEY = 'alokasiku_household_v1';
+const STORAGE_PREFIX = 'alokasiku_household_v2_';
 const ROOM_STORAGE_KEY = 'alokasiku_room_id';
 
 const INITIAL_DATA = {
@@ -80,30 +80,38 @@ const getInitialRoomId = () => {
   const urlRoom = params.get('room');
   if (urlRoom && urlRoom.trim()) {
     const clean = urlRoom.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
-    localStorage.setItem(ROOM_STORAGE_KEY, clean);
-    return clean;
+    if (clean) {
+      localStorage.setItem(ROOM_STORAGE_KEY, clean);
+      return clean;
+    }
   }
   return localStorage.getItem(ROOM_STORAGE_KEY) || 'keluarga-open';
+};
+
+const loadLocalRoomData = (room) => {
+  try {
+    const saved = localStorage.getItem(`${STORAGE_PREFIX}${room}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (validateAppData(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error('Local cache read error:', e);
+  }
+  return createFreshInitialData();
 };
 
 export default function App() {
   const [roomId, setRoomId] = useState(getInitialRoomId);
   const [syncStatus, setSyncStatus] = useState(isSupabaseConfigured ? 'connecting' : 'local-only');
-  const skipNextCloudPush = useRef(false);
-  const cloudFetchVersion = useRef(0);
+  const [appData, setAppData] = useState(() => loadLocalRoomData(getInitialRoomId()));
 
-  const [appData, setAppData] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (validateAppData(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return createFreshInitialData();
-  });
+  // Penanda agar perubahan yang datang dari Cloud tidak memicu push balik ke Cloud
+  const isRemoteUpdate = useRef(false);
+  // Penanda bahwa fetch awal untuk roomId saat ini sudah selesai
+  const isInitialCloudLoaded = useRef(false);
+  // Menyimpan timestamp terakhir yang di-push oleh perangkat ini sendiri
+  const lastLocalPushTimestamp = useRef('');
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,42 +140,48 @@ export default function App() {
     localStorage.setItem(ROOM_STORAGE_KEY, roomId);
   }, [roomId]);
 
-  // Fungsi ambil data terbaru dari Supabase (saat buka halaman / refresh)
+  // Fungsi ambil data terbaru dari Supabase
   const fetchFromSupabase = useCallback(
-    async (notify = false) => {
+    async (targetRoom, notify = false) => {
       if (!isSupabaseConfigured || !supabase) {
         setSyncStatus('local-only');
+        isInitialCloudLoaded.current = true;
         return;
       }
 
-      const requestVersion = ++cloudFetchVersion.current;
       setSyncStatus('connecting');
       const { data, error } = await supabase
         .from('household_allocations')
-        .select('data')
-        .eq('id', roomId)
+        .select('data, updated_at')
+        .eq('id', targetRoom)
         .maybeSingle();
-
-      if (requestVersion !== cloudFetchVersion.current) return;
 
       if (error) {
         console.error('Supabase fetch error:', error);
         setSyncStatus('error');
+        isInitialCloudLoaded.current = true;
         if (notify) showToast(`Gagal memuat cloud: ${error.message}`, 'error');
         return;
       }
 
       if (data && validateAppData(data.data)) {
-        skipNextCloudPush.current = true;
+        isRemoteUpdate.current = true;
         setAppData(data.data);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+        localStorage.setItem(`${STORAGE_PREFIX}${targetRoom}`, JSON.stringify(data.data));
         setSyncStatus('synced');
-        if (notify) showToast('Data terbaru berhasil dimuat');
+        isInitialCloudLoaded.current = true;
+        if (notify) showToast('Data terbaru berhasil dimuat dari Cloud');
       } else {
+        // Ruang baru di Cloud: unggah data lokal saat ini sebagai inisialisasi ruang
+        const seedData = loadLocalRoomData(targetRoom);
+        const nowIso = new Date().toISOString();
+        lastLocalPushTimestamp.current = nowIso;
+
         const { error: upsertErr } = await supabase
           .from('household_allocations')
-          .upsert({ id: roomId, data: appData, updated_at: new Date().toISOString() });
-        if (requestVersion !== cloudFetchVersion.current) return;
+          .upsert({ id: targetRoom, data: seedData, updated_at: nowIso });
+
+        isInitialCloudLoaded.current = true;
         if (upsertErr) {
           console.error('Supabase initial upsert error:', upsertErr);
           setSyncStatus('error');
@@ -176,34 +190,82 @@ export default function App() {
         }
       }
     },
-    [roomId, showToast]
+    [showToast]
   );
 
-  // Load awal saat aplikasi dibuka atau kode ruang berubah
+  // 1. Load awal + Subscribe Supabase Realtime setiap kali roomId berubah
   useEffect(() => {
-    fetchFromSupabase(false);
-  }, [fetchFromSupabase]);
+    isInitialCloudLoaded.current = false;
+    isRemoteUpdate.current = true;
+    setAppData(loadLocalRoomData(roomId));
+    fetchFromSupabase(roomId, false);
 
-  // Auto-save ke LocalStorage & Supabase setiap kali user mengubah data
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel(`room-sync-${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'household_allocations',
+          filter: `id=eq.${roomId}`,
+        },
+        (payload) => {
+          const newRecord = payload.new;
+          if (!newRecord || !validateAppData(newRecord.data)) return;
+          // Abaikan event pantulan dari push perangkat ini sendiri
+          if (newRecord.updated_at && newRecord.updated_at === lastLocalPushTimestamp.current) {
+            return;
+          }
+
+          isRemoteUpdate.current = true;
+          setAppData(newRecord.data);
+          localStorage.setItem(`${STORAGE_PREFIX}${roomId}`, JSON.stringify(newRecord.data));
+          setSyncStatus('synced');
+          showToast('Data diperbarui dari perangkat lain');
+        }
+      )
+      .subscribe();
+
+    // Sinkronisasi ulang otomatis saat tab browser kembali aktif (misal pindah aplikasi di HP)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchFromSupabase(roomId, false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [roomId, fetchFromSupabase, showToast]);
+
+  // 2. Auto-save ke LocalStorage & Supabase setiap kali user mengubah data
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+      localStorage.setItem(`${STORAGE_PREFIX}${roomId}`, JSON.stringify(appData));
     } catch (e) {
       console.error('LocalStorage save failed:', e);
     }
 
-    if (skipNextCloudPush.current) {
-      skipNextCloudPush.current = false;
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
       return;
     }
 
-    if (!isSupabaseConfigured || !supabase) return;
+    if (!isSupabaseConfigured || !supabase || !isInitialCloudLoaded.current) return;
 
-    const pushToCloud = async () => {
-      setSyncStatus('syncing');
+    setSyncStatus('syncing');
+    const timer = setTimeout(async () => {
+      const nowIso = new Date().toISOString();
+      lastLocalPushTimestamp.current = nowIso;
+
       const { error } = await supabase
         .from('household_allocations')
-        .upsert({ id: roomId, data: appData, updated_at: new Date().toISOString() });
+        .upsert({ id: roomId, data: appData, updated_at: nowIso });
 
       if (error) {
         console.error('Supabase upsert error:', error);
@@ -212,12 +274,12 @@ export default function App() {
       } else {
         setSyncStatus('synced');
       }
-    };
+    }, 300);
 
-    pushToCloud();
+    return () => clearTimeout(timer);
   }, [appData, roomId, showToast]);
 
-  // Enrich items dengan formula Excel: Sisa = Target - Realisasi
+  // Enrich items dengan formula: Sisa = Target - Realisasi
   const enrichedItems = useMemo(() => {
     return appData.allocations.map((item) => {
       const paid = item.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -511,48 +573,36 @@ export default function App() {
           ...item,
           payments: [],
         }));
-        cloudFetchVersion.current += 1;
         setExpandedRow(null);
         setSearchQuery('');
         setStatusFilter('ALL');
         setConfirmModal({ open: false, title: '', message: '', onConfirm: null });
 
-        skipNextCloudPush.current = true;
+        isRemoteUpdate.current = true;
         setAppData(freshData);
-        let localSaveFailed = false;
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(freshData));
+          localStorage.setItem(`${STORAGE_PREFIX}${roomId}`, JSON.stringify(freshData));
         } catch (error) {
           console.error('LocalStorage reset failed:', error);
-          localSaveFailed = true;
         }
 
         if (isSupabaseConfigured && supabase) {
           setSyncStatus('syncing');
-          try {
-            const { error } = await supabase
-              .from('household_allocations')
-              .upsert({ id: roomId, data: freshData, updated_at: new Date().toISOString() });
+          const nowIso = new Date().toISOString();
+          lastLocalPushTimestamp.current = nowIso;
+          const { error } = await supabase
+            .from('household_allocations')
+            .upsert({ id: roomId, data: freshData, updated_at: nowIso });
 
-            if (error) throw error;
-            setSyncStatus('synced');
-          } catch (error) {
-            console.error('Supabase reset error:', error);
+          if (error) {
             setSyncStatus('error');
-            showToast(
-              `Reset lokal berhasil, tetapi gagal menyimpan ke cloud: ${error.message || 'kesalahan jaringan'}`,
-              'error'
-            );
+            showToast(`Gagal menyimpan reset ke cloud: ${error.message}`, 'error');
             return;
           }
+          setSyncStatus('synced');
         }
 
-        showToast(
-          localSaveFailed
-            ? 'Reset berhasil di layar, tetapi gagal disimpan di browser.'
-            : 'Data berhasil dikembalikan ke pengaturan awal dengan nilai terbayar Rp 0.',
-          localSaveFailed ? 'error' : 'success'
-        );
+        showToast('Data berhasil dikembalikan ke pengaturan awal dengan nilai terbayar Rp 0.');
       },
     });
   };
@@ -582,6 +632,13 @@ export default function App() {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-pink-500/20 text-pink-200 border border-pink-400/30">
           <Cloud className="w-3.5 h-3.5 animate-pulse" /> Menyimpan...
+        </span>
+      );
+    }
+    if (syncStatus === 'error') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/20 text-rose-200 border border-rose-400/30">
+          <CloudOff className="w-3.5 h-3.5" /> Gagal Cloud
         </span>
       );
     }
@@ -621,7 +678,7 @@ export default function App() {
             {isSupabaseConfigured && (
               <button
                 type="button"
-                onClick={() => fetchFromSupabase(true)}
+                onClick={() => fetchFromSupabase(roomId, true)}
                 title="Muat Ulang Data Terbaru dari Cloud"
                 className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
               >
@@ -1313,7 +1370,7 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              Gunakan kode ruang yang sama di semua perangkat atau browser agar data yang disimpan langsung terbaca saat dibuka/di-refresh.
+              Gunakan kode ruang yang sama di semua perangkat atau browser agar data yang disimpan langsung sinkron otomatis.
             </p>
             <input
               type="text"
