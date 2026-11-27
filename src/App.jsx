@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import {
   Wallet, CheckCircle2, Clock, Plus, Pencil, Trash2, Download, Upload,
   RotateCcw, Search, Calendar, CreditCard, Sparkles, X, Check, AlertCircle,
-  FileSpreadsheet, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Receipt, Cloud, CloudOff, Share2, RefreshCw
+  FileSpreadsheet, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Receipt, Cloud, CloudOff, Share2, RefreshCw,MoreVertical
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -124,6 +124,7 @@ export default function App() {
   const [itemModal, setItemModal] = useState({ open: false, editItem: null });
   const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null });
   const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roomInput, setRoomInput] = useState(roomId);
   const fileInputRef = useRef(null);
 
@@ -659,57 +660,156 @@ export default function App() {
       )}
 
       {/* Header */}
+      {/* Header */}
+      {/* Header */}
       <header className="sticky top-0 z-30 bg-[#1E1B24] text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-0 sm:min-h-16 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-400 to-rose-600 flex items-center justify-center shadow-inner">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight leading-none">AlokasiKu</h1>
-                <SyncBadge />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-0 sm:min-h-16 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3">
+          {/* Baris 1: Logo + Status Cloud (Desktop) + Tombol Utama (Mobile) */}
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-pink-400 to-rose-600 flex items-center justify-center shadow-inner">
+                <Sparkles className="w-5 h-5 text-white" />
               </div>
-              <p className="text-[11px] text-pink-200/80 mt-0.5 hidden sm:block">Monitoring Progres Pembayaran Rumah Tangga</p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-base sm:text-lg font-bold tracking-tight leading-none">AlokasiKu</h1>
+                  {/* Status Cloud hanya tampil langsung di header pada tampilan Desktop (sm ke atas) */}
+                  <div className="hidden sm:block">
+                    <SyncBadge />
+                  </div>
+                </div>
+                <p className="text-[11px] text-pink-200/80 mt-0.5 hidden sm:block">Monitoring Progres Pembayaran Rumah Tangga</p>
+              </div>
             </div>
+
+            {/* Tombol Catat Bayar khusus tampilan Mobile */}
+            <button
+              type="button"
+              onClick={() => setPayModal({ open: true, itemId: enrichedItems.find((i) => i.remaining > 0)?.id || enrichedItems[0]?.id || '', editPayment: null })}
+              className="sm:hidden shrink-0 inline-flex min-h-9 items-center justify-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-sm transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Bayar</span>
+            </button>
           </div>
 
-          <div className="w-full sm:w-auto flex flex-wrap items-center justify-start sm:justify-end gap-1.5 sm:gap-2">
-            {isSupabaseConfigured && (
+          {/* Baris 2 (Mobile) / Sebelah Kanan (Desktop) */}
+          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+              {isSupabaseConfigured && (
+                <button
+                  type="button"
+                  onClick={() => fetchFromSupabase(roomId, true)}
+                  title="Muat Ulang Data Terbaru dari Cloud"
+                  className="flex-1 sm:flex-initial inline-flex min-h-9 sm:min-h-10 items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-pink-300 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`} />
+                  <span className="sm:hidden lg:inline">Refresh</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => fetchFromSupabase(roomId, true)}
-                title="Muat Ulang Data Terbaru dari Cloud"
-                className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+                onClick={handleCopyShareLink}
+                title="Salin Link Ruang"
+                className="flex-1 sm:flex-initial inline-flex min-h-9 sm:min-h-10 items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-pink-300 ${syncStatus === 'connecting' ? 'animate-spin' : ''}`} />
-                <span className="hidden lg:inline">Refresh</span>
+                <Share2 className="w-3.5 h-3.5 text-pink-300" />
+                <span className="sm:hidden md:inline">Bagikan</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={handleCopyShareLink}
-              title="Salin Link Ruang"
-              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
-            >
-              <Share2 className="w-3.5 h-3.5 text-pink-300" />
-              <span className="hidden md:inline">Bagikan</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRoomInput(roomId);
-                setRoomModalOpen(true);
-              }}
-              title="Ganti Kode Ruang"
-              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
-            >
-              <span>Ruang</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRoomInput(roomId);
+                  setRoomModalOpen(true);
+                }}
+                title="Ganti Kode Ruang"
+                className="flex-1 sm:flex-initial inline-flex min-h-9 sm:min-h-10 items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              >
+                <span>Ruang</span>
+              </button>
+            </div>
+
+            {/* Menu Dropdown Titik Tiga khusus Mobile (Status Cloud + Excel, Backup, Restore) */}
+            <div className="relative sm:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                aria-label="Menu Lainnya"
+                className="relative inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              >
+                <MoreVertical className="w-4 h-4" />
+                {/* Titik indikator kecil status koneksi agar tetap terpantau sekilas */}
+                <span
+                  className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
+                    isSupabaseConfigured && syncStatus === 'connected'
+                      ? 'bg-emerald-400'
+                      : syncStatus === 'connecting'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-rose-400'
+                  }`}
+                />
+              </button>
+
+              {mobileMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setMobileMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-52 rounded-xl bg-white text-[#1E1B24] shadow-xl border border-pink-100 py-1.5 z-50 text-xs font-medium">
+                    {/* Info Status Cloud di bagian atas menu */}
+                    <div className="px-3.5 py-2 border-b border-pink-100 bg-pink-50/40">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Status Sinkronisasi
+                      </span>
+                      <div className="inline-flex rounded-full bg-[#1E1B24] px-1.5 py-0.5">
+                        <SyncBadge />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleExportExcel();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left flex items-center gap-2.5 hover:bg-pink-50 transition"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>Export Excel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleExportJSON();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left flex items-center gap-2.5 hover:bg-pink-50 transition"
+                    >
+                      <Download className="w-4 h-4 text-pink-600" />
+                      <span>Backup JSON</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        fileInputRef.current?.click();
+                      }}
+                      className="w-full px-3.5 py-2.5 text-left flex items-center gap-2.5 hover:bg-pink-50 transition"
+                    >
+                      <Upload className="w-4 h-4 text-slate-600" />
+                      <span>Restore JSON</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Tombol Sekunder & Utama khusus Desktop (sm ke atas) */}
             <button
               type="button"
               onClick={handleExportExcel}
-              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="hidden sm:inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Excel</span>
@@ -717,7 +817,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleExportJSON}
-              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="hidden sm:inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <Download className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Backup</span>
@@ -725,7 +825,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
+              className="hidden sm:inline-flex min-h-10 items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/20 text-pink-100 transition"
             >
               <Upload className="w-3.5 h-3.5 text-pink-300" />
               <span className="hidden md:inline">Restore</span>
@@ -734,7 +834,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setPayModal({ open: true, itemId: enrichedItems.find((i) => i.remaining > 0)?.id || enrichedItems[0]?.id || '', editPayment: null })}
-              className="inline-flex min-h-10 items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-sm transition"
+              className="hidden sm:inline-flex min-h-10 items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
               <span>Catat Bayar</span>
@@ -1107,7 +1207,7 @@ export default function App() {
             </div>
 
             <div className="lg:hidden p-3 sm:p-4 space-y-3">
-              {filteredItems.map((item, index) => (
+              {filteredItems.map((item) => (
                 <article
                   key={item.id}
                   className="rounded-2xl border border-pink-100 bg-[#FFFDFD] p-4 shadow-sm"
@@ -1151,47 +1251,26 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-pink-100 pt-3">
-                    <div className="flex items-center gap-1">
-                      <span className="mr-1 text-[11px] font-medium text-slate-500">Urutan</span>
-                      <button
-                        type="button"
-                        onClick={() => moveAllocation(item.id, -1)}
-                        disabled={index === 0}
-                        title="Naikkan urutan pos"
-                        aria-label={`Naikkan urutan ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border border-pink-100 bg-white text-slate-600 hover:bg-pink-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        <ArrowUp className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveAllocation(item.id, 1)}
-                        disabled={index === filteredItems.length - 1}
-                        title="Turunkan urutan pos"
-                        aria-label={`Turunkan urutan ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border border-pink-100 bg-white text-slate-600 hover:bg-pink-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        <ArrowDown className="w-4 h-4" />
-                      </button>
-                    </div>
+                  {/* Baris Aksi Mobile yang Lebih Ringkas (Tanpa Tombol Urutan) */}
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-pink-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setPayModal({ open: true, itemId: item.id, editPayment: null })}
+                      title="Tambah Pembayaran"
+                      aria-label={`Tambah pembayaran ${item.name}`}
+                      className="min-h-10 inline-flex items-center justify-center gap-1.5 px-3.5 rounded-xl bg-pink-100 text-pink-700 hover:bg-pink-200 text-xs font-semibold transition"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Bayar</span>
+                    </button>
 
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPayModal({ open: true, itemId: item.id, editPayment: null })}
-                        title="Tambah Pembayaran"
-                        aria-label={`Tambah pembayaran ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl bg-pink-100 text-pink-700 hover:bg-pink-200"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}
                         title="Lihat Riwayat Pos"
                         aria-label={`Riwayat ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-pink-100"
+                        className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-pink-100 transition"
                       >
                         {expandedRow === item.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
@@ -1200,7 +1279,7 @@ export default function App() {
                         onClick={() => setItemModal({ open: true, editItem: item })}
                         title="Edit Pos"
                         aria-label={`Edit ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+                        className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -1209,7 +1288,7 @@ export default function App() {
                         onClick={() => handleDeleteItem(item.id, item.name)}
                         title="Hapus Pos"
                         aria-label={`Hapus ${item.name}`}
-                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
